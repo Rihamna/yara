@@ -1,0 +1,35 @@
+# فایل‌های محیط مجازی
+venv/
+env/
+*.pyc
+__pycache__/
+
+# فایل‌های سیستم‌عامل
+.DS_Store
+Thumbs.db
+
+# فایل‌های مربوط به IDEها
+.vscode/
+.idea/
+
+# فایل‌های لاگ و خروجی
+*.log
+*.sqlite3
+
+# فایل‌های مخفی و تنظیمات شخصی
+*.env
+.env.*
+
+# فایل‌های تست و پوشش کد
+htmlcov/
+coverage.xml
+*.cover
+*.py,cover
+
+# فایل‌های مربوط به Jupyter
+.ipynb_checkpoints/
+
+# فایل‌های مربوط به build
+build/
+dist/
+*.egg-info/
