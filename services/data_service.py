@@ -117,6 +117,73 @@ class DataService:
         except Exception as e:
             raise Exception(f"خطا در بروزرسانی وضعیت: {str(e)}")
             
+    def find_applicant_by_id(self, applicant_id: str) -> Optional[Applicant]:
+        """پیدا کردن متقاضی براساس ID"""
+        try:
+            applicants = self.load_applicants()
+            
+            for applicant in applicants:
+                if applicant.id == applicant_id:
+                    return applicant
+                    
+            return None
+            
+        except Exception as e:
+            raise Exception(f"خطا در جستجو: {str(e)}")
+            
+    def search_applicants(self, **kwargs) -> List[Applicant]:
+        """جستجوی متقاضیان براساس فیلدهای مختلف"""
+        try:
+            applicants = self.load_applicants()
+            results = []
+            
+            for applicant in applicants:
+                match = True
+                
+                # جستجو در نام پدر
+                if kwargs.get('father_name'):
+                    father_full_name = f"{applicant.father_first_name} {applicant.father_last_name}".lower()
+                    if kwargs['father_name'].lower() not in father_full_name:
+                        match = False
+                        
+                # جستجو در کد ملی پدر
+                if kwargs.get('father_national_id'):
+                    if kwargs['father_national_id'] not in applicant.father_national_id:
+                        match = False
+                        
+                # جستجو در نام فرزند
+                if kwargs.get('child_name'):
+                    child_full_name = f"{applicant.child_first_name} {applicant.child_last_name}".lower()
+                    if kwargs['child_name'].lower() not in child_full_name:
+                        match = False
+                        
+                # جستجو در بانک
+                if kwargs.get('bank_name'):
+                    if kwargs['bank_name'].lower() not in applicant.bank_name.lower():
+                        match = False
+                        
+                # فیلتر وضعیت
+                if kwargs.get('status'):
+                    if applicant.status != kwargs['status']:
+                        match = False
+                        
+                # فیلتر تاریخ
+                if kwargs.get('from_date'):
+                    if applicant.created_at.date() < kwargs['from_date']:
+                        match = False
+                        
+                if kwargs.get('to_date'):
+                    if applicant.created_at.date() > kwargs['to_date']:
+                        match = False
+                        
+                if match:
+                    results.append(applicant)
+                    
+            return results
+            
+        except Exception as e:
+            raise Exception(f"خطا در جستجو: {str(e)}")
+            
     def _save_applicant_for_robot(self, applicant: Applicant):
         """ذخیره فایل جداگانه برای ربات"""
         try:
@@ -128,7 +195,13 @@ class DataService:
                 'id': applicant.id,
                 'status': applicant.status.value,
                 'created_at': applicant.created_at.isoformat(),
-                'data': applicant.to_robot_data(),
+                'applicant_info': {
+                    'father_name': f"{applicant.father_first_name} {applicant.father_last_name}".strip(),
+                    'child_name': f"{applicant.child_first_name} {applicant.child_last_name}".strip(),
+                    'bank': applicant.bank_name,
+                    'branch': applicant.branch_name
+                },
+                'selenium_data': applicant.to_robot_data(),
                 'tracking_number': applicant.generate_tracking_number()
             }
             
@@ -217,7 +290,17 @@ class DataService:
             'max_concurrent_robots': 1,
             'auto_backup': True,
             'backup_interval_hours': 24,
-            'last_backup': None
+            'last_backup': None,
+            'sms_forwarder_enabled': False,
+            'sms_forwarder_port': 8080,
+            'captcha_service': 'manual',  # manual, 2captcha, anticaptcha
+            'captcha_api_key': '',
+            'notification_methods': ['desktop'],  # desktop, telegram, email
+            'telegram_bot_token': '',
+            'telegram_chat_id': '',
+            'email_smtp_server': '',
+            'email_username': '',
+            'email_password': ''
         }
         
     def create_backup(self) -> str:
@@ -229,13 +312,19 @@ class DataService:
             
             backup_data = {
                 'created_at': datetime.now().isoformat(),
+                'backup_version': '2.0',
                 'applicants': [a.to_dict() for a in self.load_applicants()],
                 'settings': self.load_settings(),
-                'version': '1.0'
+                'statistics': self.get_stats()
             }
             
             with open(backup_path, 'w', encoding='utf-8') as f:
                 json.dump(backup_data, f, ensure_ascii=False, indent=4)
+                
+            # بروزرسانی تنظیمات آخرین بکاپ
+            settings = self.load_settings()
+            settings['last_backup'] = datetime.now().isoformat()
+            self.save_settings(settings)
                 
             return backup_path
             
@@ -251,6 +340,9 @@ class DataService:
             with open(backup_file_path, 'r', encoding='utf-8') as f:
                 backup_data = json.load(f)
                 
+            # بررسی نسخه بکاپ
+            version = backup_data.get('backup_version', '1.0')
+            
             # بازیابی متقاضیان
             if 'applicants' in backup_data:
                 applicants = []
@@ -290,6 +382,24 @@ class DataService:
             
             success_rate = (completed_count / total_count * 100) if total_count > 0 else 0
             
+            # آمار بانک‌ها
+            bank_stats = {}
+            for applicant in applicants:
+                bank = applicant.bank_name
+                if bank not in bank_stats:
+                    bank_stats[bank] = {'total': 0, 'completed': 0}
+                bank_stats[bank]['total'] += 1
+                if applicant.status == ApplicantStatus.COMPLETED:
+                    bank_stats[bank]['completed'] += 1
+            
+            # آمار استان‌ها
+            state_stats = {}
+            for applicant in applicants:
+                state = applicant.father_birth_state
+                if state not in state_stats:
+                    state_stats[state] = 0
+                state_stats[state] += 1
+            
             return {
                 'total_count': total_count,
                 'pending_count': pending_count,
@@ -299,11 +409,32 @@ class DataService:
                 'today_count': today_count,
                 'week_count': week_count,
                 'month_count': month_count,
-                'success_rate': round(success_rate, 2)
+                'success_rate': round(success_rate, 2),
+                'bank_statistics': bank_stats,
+                'state_statistics': state_stats,
+                'average_processing_time': self._calculate_avg_processing_time(applicants)
             }
             
         except Exception as e:
             raise Exception(f"خطا در محاسبه آمار: {str(e)}")
+            
+    def _calculate_avg_processing_time(self, applicants: List[Applicant]) -> float:
+        """محاسبه میانگین زمان پردازش"""
+        completed_applicants = [a for a in applicants if a.status == ApplicantStatus.COMPLETED and a.completion_time]
+        
+        if not completed_applicants:
+            return 0.0
+            
+        total_time = 0
+        for applicant in completed_applicants:
+            try:
+                completion_time = datetime.fromisoformat(applicant.completion_time.replace('/', '-'))
+                processing_time = (completion_time - applicant.created_at).total_seconds() / 60  # دقیقه
+                total_time += processing_time
+            except:
+                continue
+                
+        return round(total_time / len(completed_applicants), 2) if completed_applicants else 0.0
             
     def get_current_time(self) -> str:
         """زمان فعلی به صورت متنی"""
@@ -327,5 +458,62 @@ class DataService:
                         if file_time < cutoff_date:
                             os.remove(file_path)
                             
+            # پاکسازی بکاپ‌های قدیمی
+            backup_path = os.path.join(self.data_dir, "backups")
+            
+            if os.path.exists(backup_path):
+                for file_name in os.listdir(backup_path):
+                    if file_name.startswith("backup_") and file_name.endswith(".json"):
+                        file_path = os.path.join(backup_path, file_name)
+                        file_time = datetime.fromtimestamp(os.path.getmtime(file_path))
+                        
+                        if file_time < cutoff_date:
+                            os.remove(file_path)
+                            
         except Exception as e:
             raise Exception(f"خطا در پاکسازی فایل‌ها: {str(e)}")
+            
+    def export_to_excel(self, file_path: str, applicants: List[Applicant] = None):
+        """صادرات به اکسل"""
+        try:
+            import pandas as pd
+            
+            if applicants is None:
+                applicants = self.load_applicants()
+                
+            data = []
+            for applicant in applicants:
+                data.append({
+                    'نام پدر': applicant.father_first_name,
+                    'نام خانوادگی پدر': applicant.father_last_name,
+                    'کد ملی پدر': applicant.father_national_id,
+                    'موبایل پدر': applicant.father_mobile,
+                    'استان تولد پدر': applicant.father_birth_state,
+                    'شهر تولد پدر': applicant.father_birth_city,
+                    'تاریخ تولد پدر': f"{applicant.father_birth_year}/{applicant.father_birth_month}/{applicant.father_birth_day}",
+                    'نام فرزند': applicant.child_first_name,
+                    'نام خانوادگی فرزند': applicant.child_last_name,
+                    'کد ملی فرزند': applicant.child_national_id,
+                    'استان تولد فرزند': applicant.child_birth_state,
+                    'شهر تولد فرزند': applicant.child_birth_city,
+                    'تاریخ تولد فرزند': f"{applicant.child_birth_year}/{applicant.child_birth_month}/{applicant.child_birth_day}",
+                    'تعداد فرزند': applicant.child_number,
+                    'بانک': applicant.bank_name,
+                    'شعبه': applicant.branch_name,
+                    'آدرس': applicant.address,
+                    'کد پستی': applicant.postal_code,
+                    'کد رهگیری': applicant.tracking_code,
+                    'وضعیت': applicant.status_text,
+                    'تاریخ ثبت': applicant.created_at.strftime("%Y/%m/%d %H:%M:%S"),
+                    'تاریخ تکمیل': applicant.completion_time if applicant.completion_time else ""
+                })
+                
+            df = pd.DataFrame(data)
+            df.to_excel(file_path, index=False, engine='openpyxl')
+            
+            return True
+            
+        except ImportError:
+            raise Exception("برای صادرات به اکسل، پکیج pandas و openpyxl را نصب کنید")
+        except Exception as e:
+            raise Exception(f"خطا در صادرات به اکسل: {str(e)}")
