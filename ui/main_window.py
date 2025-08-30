@@ -1,184 +1,170 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
-import sys
-from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QHBoxLayout, 
-                            QVBoxLayout, QStackedWidget)
+from PyQt5.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, 
+                             QStackedWidget)
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QFont
 
-from .ui_styles import UIStyles
-from .sidebar_component import CollapsibleSidebar
-from .top_navigation import TopNavigation
-
-# صفحات مختلف
-from .pages.home_page import HomePage
-from .pages.other_pages import SettingsPage, NewsPage, EducationPage, ContactPage
-from .pages.robots.marriage_loan_robot import MarriageLoanRobot
-from .pages.robots.child_loan_robot import ChildLoanRobot
+from ui.components.sidebar import Sidebar
+from ui.components.topbar import TopMenu
+from ui.pages.home_page import HomePage
+from ui.pages.base_page import BasePage
+from ui.styles.colors import *
 
 class MainWindow(QMainWindow):
-    """پنجره اصلی برنامه YARA"""
-    
     def __init__(self):
         super().__init__()
-        self.setObjectName("mainWindow")
+        self.setWindowTitle("سایدبار Fanus")
+        self.setGeometry(100, 100, 1200, 700)
         
-        # تنظیمات پنجره
-        self.setWindowTitle("YARA - سامانه مدیریت وام")
-        self.setMinimumSize(1200, 800)
-        self.resize(1400, 900)
+        # Set background color
+        self.setStyleSheet(f"background-color: #0F0F1A;")
         
-        # تنظیم استایل کلی
-        self.setStyleSheet(UIStyles.get_main_window_style())
-        
-        # ایجاد رابط کاربری
-        self.setup_ui()
-        
-        # اتصال سیگنال‌ها
-        self.connect_signals()
-        
-        # نمایش صفحه اولیه
-        self.show_page("home")
-        
-    def setup_ui(self):
-        """تنظیم رابط کاربری اصلی"""
-        # ویجت مرکزی
+        # Central widget
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         
-        # Layout اصلی
+        # Main layout
         main_layout = QHBoxLayout(central_widget)
-        main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
+        main_layout.setContentsMargins(0, 0, 0, 0)
         
-        # Sidebar
-        self.sidebar = CollapsibleSidebar()
+        # Right side container (top menu + main content)
+        right_container = QWidget()
+        right_layout = QVBoxLayout(right_container)
+        right_layout.setSpacing(0)
+        right_layout.setContentsMargins(0, 0, 0, 0)
         
-        # ناحیه محتوای اصلی
-        self.create_content_area()
+        # Top menu
+        self.top_menu = TopMenu(self)
+        right_layout.addWidget(self.top_menu)
         
-        # اضافه کردن به layout
-        main_layout.addWidget(self.content_area)
-        main_layout.addWidget(self.sidebar)  # سمت راست
+        # Main content
+        self.main_content = QWidget()
+        main_content_layout = QVBoxLayout(self.main_content)
+        main_content_layout.setContentsMargins(0, 0, 0, 0)
         
-    def create_content_area(self):
-        """ایجاد ناحیه محتوای اصلی"""
-        self.content_area = QWidget()
-        self.content_area.setObjectName("contentArea")
-        self.content_area.setStyleSheet(UIStyles.get_content_area_style())
-        
-        content_layout = QVBoxLayout(self.content_area)
-        content_layout.setContentsMargins(0, 0, 0, 0)
-        content_layout.setSpacing(0)
-        
-        # منوی بالایی
-        self.top_navigation = TopNavigation()
-        
-        # Stack widget برای صفحات مختلف
         self.stacked_widget = QStackedWidget()
-        self.stacked_widget.setStyleSheet("QStackedWidget { background-color: transparent; }")
+        self.stacked_widget.setStyleSheet(f"""
+            QStackedWidget {{
+                background-color: {DARK_SECONDARY};
+                border-radius: 10px;
+                border: 1px solid {DARK_BORDER};
+                margin: 20px;
+            }}
+        """)
+        main_content_layout.addWidget(self.stacked_widget)
         
-        # ایجاد صفحات
+        right_layout.addWidget(self.main_content)
+        
+        # Add right container first (left side)
+        main_layout.addWidget(right_container)
+        
+        # Create sidebar (right side)
+        self.sidebar = Sidebar(self)
+        main_layout.addWidget(self.sidebar)
+        
+        # Add toggle button to sidebar (needs to be on top of other widgets)
+        self.sidebar.toggle_btn.setParent(self)
+        self.sidebar.toggle_btn.show()
+        
+        # Create pages
         self.create_pages()
         
-        content_layout.addWidget(self.top_navigation)
-        content_layout.addWidget(self.stacked_widget)
-        
+        # Set initial page
+        self.change_page('home')
+    
     def create_pages(self):
-        """ایجاد تمام صفحات"""
-        # صفحه اصلی
-        self.home_page = HomePage()
-        self.stacked_widget.addWidget(self.home_page)
+        # Home page
+        home_page = HomePage()
+        self.stacked_widget.addWidget(home_page)
         
-        # صفحه تنظیمات
-        self.settings_page = SettingsPage()
-        self.stacked_widget.addWidget(self.settings_page)
+        # Other pages
+        settings_page = BasePage("تنظیمات سیستم", "این بخش مربوط به تنظیمات کلی سیستم می‌باشد.")
+        self.stacked_widget.addWidget(settings_page)
         
-        # ربات وام ازدواج
-        self.marriage_loan_page = MarriageLoanRobot()
-        self.stacked_widget.addWidget(self.marriage_loan_page)
+        marriage_loan_page = BasePage("ربات وام ازدواج", "این بخش مربوط به مدیریت وام ازدواج می‌باشد.")
+        self.stacked_widget.addWidget(marriage_loan_page)
         
-        # ربات وام فرزند
-        self.child_loan_page = ChildLoanRobot()
-        self.stacked_widget.addWidget(self.child_loan_page)
+        child_loan_page = BasePage("ربات وام فرزند", "این بخش مربوط به مدیریت وام فرزند می‌باشد.")
+        self.stacked_widget.addWidget(child_loan_page)
         
-        # صفحه اخبار
-        self.news_page = NewsPage()
-        self.stacked_widget.addWidget(self.news_page)
+        news_page = BasePage("اخبار و اطلاعیه‌ها", "آخرین اخبار و اطلاعیه‌های سیستم در این بخش نمایش داده می‌شود.")
+        self.stacked_widget.addWidget(news_page)
         
-        # صفحه آموزش‌ها
-        self.education_page = EducationPage()
-        self.stacked_widget.addWidget(self.education_page)
+        education_page = BasePage("آموزش‌های سیستم", "آموزش‌های مربوط به استفاده از سیستم در این بخش قرار دارد.")
+        self.stacked_widget.addWidget(education_page)
         
-        # صفحه ارتباط با ما
-        self.contact_page = ContactPage()
-        self.stacked_widget.addWidget(self.contact_page)
+        contact_page = BasePage("ارتباط با ما", "راه‌های ارتباطی با پشتیبانی سیستم در این بخش قرار دارد.")
+        self.stacked_widget.addWidget(contact_page)
+    
+    def change_page(self, page_name):
+        page_index = {
+            'home': 0,
+            'settings': 1,
+            'marriage-loan': 2,
+            'child-loan': 3,
+            'news': 4,
+            'education': 5,
+            'contact': 6
+        }.get(page_name, 0)
         
-        # نقشه صفحات
-        self.pages_map = {
-            "home": self.home_page,
-            "settings": self.settings_page,
-            "marriage-loan": self.marriage_loan_page,
-            "child-loan": self.child_loan_page,
-            "news": self.news_page,
-            "education": self.education_page,
-            "contact": self.contact_page
+        self.stacked_widget.setCurrentIndex(page_index)
+        
+        # Update top menu based on page
+        menu_templates = {
+            'home': {
+                'title': 'صفحه اصلی',
+                'icon': 'fas fa-home',
+                'items': []
+            },
+            'settings': {
+                'title': 'تنظیمات سیستم',
+                'icon': 'fas fa-cog',
+                'items': []
+            },
+            'marriage-loan': {
+                'title': 'ربات وام ازدواج',
+                'icon': 'fas fa-heart',
+                'items': [
+                    {'icon': 'fas fa-cog', 'text': 'تنظیمات وام', 'active': True},
+                    {'icon': 'fas fa-graduation-cap', 'text': 'آموزش استفاده'},
+                    {'icon': 'fas fa-users', 'text': 'متقاضیان'},
+                    {'icon': 'fas fa-bell', 'text': 'اطلاع‌رسانی'}
+                ]
+            },
+            'child-loan': {
+                'title': 'ربات وام فرزند',
+                'icon': 'fas fa-baby',
+                'items': [
+                    {'icon': 'fas fa-cog', 'text': 'تنظیمات وام', 'active': True},
+                    {'icon': 'fas fa-graduation-cap', 'text': 'آموزش استفاده'},
+                    {'icon': 'fas fa-users', 'text': 'متقاضیان'},
+                    {'icon': 'fas fa-bell', 'text': 'اطلاع‌رسانی'}
+                ]
+            },
+            'news': {
+                'title': 'اخبار و اطلاعیه‌ها',
+                'icon': 'fas fa-newspaper',
+                'items': []
+            },
+            'education': {
+                'title': 'آموزش‌های سیستم',
+                'icon': 'fas fa-graduation-cap',
+                'items': [
+                    {'icon': 'fas fa-heart', 'text': 'آموزش وام ازدواج'},
+                    {'icon': 'fas fa-baby', 'text': 'آموزش وام فرزند', 'active': True},
+                    {'icon': 'fas fa-cog', 'text': 'آموزش تنظیمات'}
+                ]
+            },
+            'contact': {
+                'title': 'ارتباط با ما',
+                'icon': 'fas fa-envelope',
+                'items': []
+            }
         }
         
-    def connect_signals(self):
-        """اتصال سیگنال‌ها"""
-        # سیگنال کلیک منوی sidebar
-        self.sidebar.menu_clicked.connect(self.show_page)
-        
-        # سیگنال منوی بالایی
-        self.top_navigation.top_menu_clicked.connect(self.handle_top_menu_click)
-        
-    def show_page(self, page_id):
-        """نمایش صفحه مشخص"""
-        if page_id in self.pages_map:
-            # تغییر صفحه
-            page_widget = self.pages_map[page_id]
-            self.stacked_widget.setCurrentWidget(page_widget)
-            
-            # بروزرسانی منوی بالایی
-            self.top_navigation.update_menu(page_id)
-            
-            # تنظیم منوی فعال در sidebar
-            self.sidebar.set_active_menu(page_id)
-            
-            # فراخوانی متد activate صفحه (اگر موجود باشد)
-            if hasattr(page_widget, 'activate'):
-                page_widget.activate()
-                
-    def handle_top_menu_click(self, button_id):
-        """مدیریت کلیک روی منوی بالایی"""
-        # دریافت صفحه فعلی
-        current_page = self.stacked_widget.currentWidget()
-        
-        # ارسال سیگنال به صفحه فعلی
-        if hasattr(current_page, 'handle_top_menu_action'):
-            current_page.handle_top_menu_action(button_id)
-            
+        template = menu_templates.get(page_name, menu_templates['home'])
+        self.top_menu.update_menu(template['title'], template['icon'], template['items'])
+    
     def resizeEvent(self, event):
-        """تنظیم layout هنگام تغییر سایز پنجره"""
+        # Reposition toggle button when window is resized
+        self.sidebar.toggle_btn.move(self.sidebar.width() - 14, self.height() // 2 - 14)
         super().resizeEvent(event)
-        # می‌توان اینجا تنظیمات responsive اضافه کرد
-
-
-def main():
-    """تابع اصلی برنامه"""
-    app = QApplication(sys.argv)
-    
-    # تنظیم فونت پیش‌فرض
-    font = QFont("Segoe UI", 10)
-    app.setFont(font)
-    
-    # ایجاد و نمایش پنجره اصلی
-    window = MainWindow()
-    window.show()
-    
-    sys.exit(app.exec_())
-
-if __name__ == "__main__":
-    main()
